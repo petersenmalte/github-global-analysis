@@ -8,6 +8,7 @@ import pytest
 
 from github_global_analysis.ingest import EventIngestError, ingest_event_file
 from github_global_analysis.metrics import build_report_data
+from github_global_analysis.storage import AnalyticsStore
 
 from .conftest import commit, push_event, write_events
 
@@ -306,6 +307,44 @@ def test_retention_prunes_old_facts_but_keeps_successful_source_provenance(
     )
 
     assert store.query("SELECT * FROM event_commits") == []
+    assert store.query("SELECT * FROM repository_commit_observations") == []
+    assert store.query("SELECT status FROM sources") == [{"status": "succeeded"}]
+
+
+def test_report_preparation_advances_retention_without_new_ingestion(
+    monkeypatch, store, rules, tmp_path: Path
+) -> None:
+    events_path = write_events(
+        tmp_path / "events.jsonl",
+        [
+            push_event(
+                event_id="expiring",
+                repository="example/expiring",
+                repository_id=1,
+                commits=[commit("a" * 40, "Expiring\n\nHuman-Only: yes")],
+            )
+        ],
+    )
+    ingest_event_file(
+        store,
+        events_path,
+        source_url="https://example.test/expiring",
+        window_start_utc="2025-02-01T00:00:00Z",
+        window_end_utc="2025-02-01T01:00:00Z",
+        rules=rules,
+    )
+    assert store.query("SELECT count(*) AS total FROM event_commits") == [{"total": 1}]
+
+    monkeypatch.setattr(
+        AnalyticsStore,
+        "retention_start_utc",
+        staticmethod(lambda: "2025-02-02T00:00:00Z"),
+    )
+    report = build_report_data(store)
+
+    assert report["attribution"]["unique_observed_commit_facts"] == 0
+    assert store.query("SELECT * FROM event_commits") == []
+    assert store.query("SELECT * FROM event_commit_attributions") == []
     assert store.query("SELECT * FROM repository_commit_observations") == []
     assert store.query("SELECT status FROM sources") == [{"status": "succeeded"}]
 

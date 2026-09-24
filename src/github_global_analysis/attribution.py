@@ -79,6 +79,12 @@ def _contains_declaration(
     return any(value in accepted.get(key, ()) for key, value in trailers)
 
 
+def _has_invalid_primary_value(
+    trailers: Iterable[Tuple[str, str]], accepted: Mapping[str, Tuple[str, ...]]
+) -> bool:
+    return any(key in accepted and value not in accepted[key] for key, value in trailers)
+
+
 def _trailer_values(trailers: Iterable[Tuple[str, str]], key: str) -> List[str]:
     return [value for actual_key, value in trailers if actual_key == key]
 
@@ -112,16 +118,19 @@ def classify_commit(
 
     declared_ai = _contains_declaration(trailers, rules.ai_trailers)
     declared_human = _contains_declaration(trailers, rules.human_trailers)
+    invalid_primary_value = _has_invalid_primary_value(
+        trailers, rules.ai_trailers
+    ) or _has_invalid_primary_value(trailers, rules.human_trailers)
     coauthors = tuple(_trailer_values(trailers, "Co-authored-by"))
     exact_coauthor_values = tuple(f"{name} <{email}>" for name, email in rules.exact_ai_coauthors)
     if any(coauthor in exact_coauthor_values for coauthor in coauthors):
         declared_ai = True
 
-    if declared_ai and declared_human:
+    if invalid_primary_value or (declared_ai and declared_human):
         return AttributionResult(
             declared_attribution=INDETERMINATE,
             is_bot=False,
-            evidence="conflicting-explicit-declarations",
+            evidence="conflicting-or-invalid-explicit-declarations",
             tool_labels=(),
             rule_version=rules.version,
         )

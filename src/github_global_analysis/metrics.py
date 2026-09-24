@@ -118,7 +118,9 @@ def _monthly_trend(commits: Iterable[Mapping[str, Any]], generated_at_utc: str) 
 
 def build_report_data(store: AnalyticsStore) -> Dict[str, Any]:
     """Produce a machine-readable report basis without inventing absent coverage."""
+    store.prune_expired_event_history()
     generated_at = utc_now_iso()
+    retention_start = store.retention_start_utc()
     panel_source_id = store.latest_panel_source_id()
     panel_rows: List[Mapping[str, Any]] = []
     language_rows: List[Mapping[str, Any]] = []
@@ -163,16 +165,37 @@ def build_report_data(store: AnalyticsStore) -> Dict[str, Any]:
                   AND repository_commit_observations.source_id IN ({placeholders})
             )
               AND event_selection_id = ?
+            AND committed_at_utc >= ?
+            AND committed_at_utc <= ?
             ORDER BY sha
             """,
-            [*active_event_source_ids, source_summary["active_event_selection_id"]],
+            [
+              *active_event_source_ids,
+              source_summary["active_event_selection_id"],
+              retention_start,
+              generated_at,
+            ],
         )
         observations = store.query(
             f"""
-            SELECT * FROM repository_commit_observations
+            SELECT repository_commit_observations.*
+            FROM repository_commit_observations
             WHERE source_id IN ({placeholders})
+            AND EXISTS (
+                SELECT 1
+                FROM event_commit_attributions
+                WHERE event_commit_attributions.sha = repository_commit_observations.sha
+                  AND event_commit_attributions.event_selection_id = ?
+                  AND event_commit_attributions.committed_at_utc >= ?
+                  AND event_commit_attributions.committed_at_utc <= ?
+            )
             """,
-            active_event_source_ids,
+            [
+              *active_event_source_ids,
+              source_summary["active_event_selection_id"],
+              retention_start,
+              generated_at,
+            ],
         )
     else:
         commits = []

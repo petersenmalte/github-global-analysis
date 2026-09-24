@@ -42,6 +42,20 @@ def test_conflicting_declarations_and_unknown_tools_are_not_human_evidence(rules
     assert unknown_tool.tool_labels == ()
 
 
+def test_conflicting_or_unsupported_primary_trailer_values_are_indeterminate(rules) -> None:
+    contradictory_ai = classify_commit(
+        "Change\n\nAI-Assisted: yes\nAI-Assisted: no", rules=rules
+    )
+    contradictory_human = classify_commit(
+        "Change\n\nHuman-Only: yes\nHuman-Only: no", rules=rules
+    )
+    unsupported_ai = classify_commit("Change\n\nAI-Assisted: no", rules=rules)
+
+    for result in (contradictory_ai, contradictory_human, unsupported_ai):
+        assert result.declared_attribution == INDETERMINATE
+        assert result.evidence == "conflicting-or-invalid-explicit-declarations"
+
+
 def test_bot_identity_is_a_separate_dimension_not_ai_attribution(rules) -> None:
     result = classify_commit(
         "Automated update\n\nAI-Assisted: yes\nAI-Tools: GitHub Copilot",

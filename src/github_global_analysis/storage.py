@@ -405,7 +405,7 @@ class AnalyticsStore:
         return True
 
     @staticmethod
-    def _retention_start_utc() -> str:
+    def retention_start_utc() -> str:
         now = utc_now()
         try:
             start = now.replace(year=now.year - 10)
@@ -415,7 +415,7 @@ class AnalyticsStore:
 
     def _prune_event_history(self, connection: duckdb.DuckDBPyConnection) -> None:
         """Keep event facts/observations aligned with the ten-year report window."""
-        retention_start = self._retention_start_utc()
+        retention_start = self.retention_start_utc()
         retention_end = utc_now_iso()
         connection.execute(
             """
@@ -438,6 +438,28 @@ class AnalyticsStore:
             """,
             [retention_start, retention_end],
         )
+
+    def prune_expired_event_history(self) -> bool:
+        """Advance retention before reporting even when no source is newly ingested."""
+        tables = (
+            "event_commits",
+            "event_commit_attributions",
+            "repository_commit_observations",
+        )
+        with self.transaction() as connection:
+            before = sum(
+                connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+                for table in tables
+            )
+            self._prune_event_history(connection)
+            after = sum(
+                connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+                for table in tables
+            )
+        changed = before != after
+        if changed:
+            self.export_derived()
+        return changed
 
     def latest_panel_source_id(self) -> Optional[str]:
         with self.connect() as connection:
