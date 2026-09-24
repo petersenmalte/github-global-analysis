@@ -80,9 +80,17 @@ def _contains_declaration(
 
 
 def _has_invalid_primary_value(
-    trailers: Iterable[Tuple[str, str]], accepted: Mapping[str, Tuple[str, ...]]
+    trailers: Iterable[Tuple[str, str]],
+    *accepted_maps: Mapping[str, Tuple[str, ...]],
 ) -> bool:
-    return any(key in accepted and value not in accepted[key] for key, value in trailers)
+    accepted_by_key: Dict[str, set[str]] = {}
+    for accepted in accepted_maps:
+        for key, values in accepted.items():
+            accepted_by_key.setdefault(key, set()).update(values)
+    return any(
+        key in accepted_by_key and value not in accepted_by_key[key]
+        for key, value in trailers
+    )
 
 
 def _trailer_values(trailers: Iterable[Tuple[str, str]], key: str) -> List[str]:
@@ -119,8 +127,8 @@ def classify_commit(
     declared_ai = _contains_declaration(trailers, rules.ai_trailers)
     declared_human = _contains_declaration(trailers, rules.human_trailers)
     invalid_primary_value = _has_invalid_primary_value(
-        trailers, rules.ai_trailers
-    ) or _has_invalid_primary_value(trailers, rules.human_trailers)
+        trailers, rules.ai_trailers, rules.human_trailers
+    )
     coauthors = tuple(_trailer_values(trailers, "Co-authored-by"))
     exact_coauthor_values = tuple(f"{name} <{email}>" for name, email in rules.exact_ai_coauthors)
     if any(coauthor in exact_coauthor_values for coauthor in coauthors):

@@ -56,6 +56,18 @@ def test_conflicting_or_unsupported_primary_trailer_values_are_indeterminate(rul
         assert result.evidence == "conflicting-or-invalid-explicit-declarations"
 
 
+def test_shared_declared_attribution_key_accepts_each_configured_primary_value(rules) -> None:
+    declared_ai = classify_commit(
+        "Change\n\nDeclared-Attribution: ai-assisted", rules=rules
+    )
+    declared_human = classify_commit(
+        "Change\n\nDeclared-Attribution: human-only", rules=rules
+    )
+
+    assert declared_ai.declared_attribution == DECLARED_AI
+    assert declared_human.declared_attribution == DECLARED_HUMAN
+
+
 def test_bot_identity_is_a_separate_dimension_not_ai_attribution(rules) -> None:
     result = classify_commit(
         "Automated update\n\nAI-Assisted: yes\nAI-Tools: GitHub Copilot",
